@@ -1,0 +1,86 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# Build output
+/dist/
+/build/
+
+# Air live reload files and directories
+/tmp/
+tmp/
+.air/
+*.tmp
+build-errors.log
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Log files
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Compiled binary (add your project name if you have a specific binary name)
+main
+freecodecamp-go-tutorial
+
+# Coverage reports
+*.cover
+coverage.out
+
+# Profiling data
+*.prof
+
+# Memory profiling
+*.mprof
+
+# CPU profiling
+*.pprof
+
+# Test cache
+.cache/
+
+# Backup files
+*.bak
+*.backup 
