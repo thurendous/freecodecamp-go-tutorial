@@ -1,115 +1,124 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 type Todo struct {
-	ID        int    `json:"id"`
-	Completed bool   `json:"completed"`
-	Body      string `json:"body"`
+	ID        primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Body      string             `json:"body" bson:"body"`
+	Completed bool               `json:"completed" bson:"completed"`
 }
 
-// `json:id`是一个标签，用于指定JSON序列化时的字段名
-// 如此一来，在序列化时，字段名会变为id，而不是ID
+var todos []Todo
+var collection *mongo.Collection
 
 func main() {
 	fmt.Println("Hello, World!")
+
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal("Error loading .env file: ", err)
 	}
-	port := os.Getenv("PORT")
+	MONGODB_URI := os.Getenv("MONGODB_URI")
+	// fmt.Println(MONGODB_URI)
+	// Use the SetServerAPIOptions() method to set the version of the Stable API on the client
+	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
+	opts := options.Client().ApplyURI(MONGODB_URI).SetServerAPIOptions(serverAPI)
+	// Create a new client and connect to the server
+	client, err := mongo.Connect(context.TODO(), opts)
+	// Check the connection
+	if err != nil {
+		log.Fatal("Error connecting to MongoDB", err)
+	}
+
+	defer func() {
+		if err = client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
+	// Send a ping to confirm a successful connection
+	if err := client.Ping(context.TODO(), readpref.Primary()); err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
+
+	fmt.Println("Connected to MongoDB")
+
+	collection = client.Database("golang_db").Collection("todos")
+
+	// defer client.Disconnect(context.Background())
+
 	app := fiber.New()
 
-	todos := []Todo{} // 这里是创建了一个非nil的空slice
+	app.Get("/api/todos", getTodos)
+	app.Post("/api/todos", createTodo)
+	// app.Patch("/api/todos", updateTodo)
+	// app.Delete("/api/todos", deleteTodo)
 
-	fmt.Println("Server is running on port 4000")
+	PORT := os.Getenv("PORT")
+	if PORT == "" {
+		PORT = "4000"
+	}
 
-	app.Get("/", func(c *fiber.Ctx) error {
-		// return c.Status(200).JSON(fiber.Map{"msg": "Hello air!"})
-		return c.Status(200).JSON(todos)
-	})
-
-	// 创建一个POST请求，用于创建一个todo
-	app.Post("/api/todos", func(c *fiber.Ctx) error {
-		todo := &Todo{}
-		fmt.Println(todo)
-
-		if err := c.BodyParser(todo); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		fmt.Println(todo)
-		if todo.Body == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "Body is required"})
-		}
-		todo.ID = len(todos) + 1
-		todo.Completed = false
-		todos = append(todos, *todo)
-		return c.Status(201).JSON(todo)
-	})
-
-	// Update a todo to be completed
-	app.Patch("/api/todos/:id", func(c *fiber.Ctx) error {
-		id := c.Params("id")
-		for i, todo := range todos {
-			if fmt.Sprint(todo.ID) == id {
-				todos[i].Completed = true
-				return c.Status(200).JSON(todos[i])
-			}
-		}
-		return c.Status(404).JSON(fiber.Map{"error": "Todo not found"})
-	})
-
-	// Update a todo's content to the designated content
-	app.Put("/api/todos/:id", func(c *fiber.Ctx) error {
-		// 获取请求体中的内容
-		id := c.Params("id")
-		// 解析请求体中的内容
-		var todo Todo
-		// 创建一个Todo类型的变量 这是一个Todo类型的变量，不是指针
-		// 初始化成了这个值
-		//    Todo{
-		//       ID: 0,         // int 的零值
-		//       Completed: false,  // bool 的零值
-		//       Body: "",      // string 的零值
-		//    }
-		if err := c.BodyParser(&todo); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		// 更新todo的内容
-		for i, t := range todos {
-			if fmt.Sprint(t.ID) == id {
-				todos[i].Body = todo.Body
-				return c.Status(200).JSON(todos[i])
-			}
-		}
-		return c.Status(404).JSON(fiber.Map{"error": "Todo not found"})
-	})
-
-	// Delete a todo
-	app.Delete("/api/todos/:id", func(c *fiber.Ctx) error {
-		id := c.Params("id")
-		for i, todo := range todos {
-			if fmt.Sprint(todo.ID) == id {
-				todos = append(todos[:i], todos[i+1:]...)
-				return c.Status(200).JSON(fiber.Map{"msg": "Todo deleted"})
-			}
-		}
-		return c.Status(404).JSON(fiber.Map{"error": "Todo not found"})
-	})
-
-	log.Fatal(app.Listen(":" + port))
+	fmt.Printf("Server starting on port %s\n", PORT)
+	log.Fatal(app.Listen(":" + PORT))
 }
 
-// var x int = 5 // 0x00001 -> record the val	 of x
-// var p *int = &x // 0x00001 -> This is the pointer point to the memory address of x
-// fmt.Println(p) // 0x00001
-// fmt.Println(*p) // 5
-// *p = 10 // assign the val of x to 10
-// fmt.Println(x) // 10
+func getTodos(c *fiber.Ctx) error {
+	cursor, err := collection.Find(context.Background(), bson.M{}) // bson.M{} is a filter to find all todos
+	if err != nil {
+		return c.Status(500).SendString("Error fetching todos")
+	}
+
+	defer cursor.Close(context.Background())
+
+	fetchedTodos := make([]Todo, 0) // 初始化为空数组，不是 nil
+	if err = cursor.All(context.Background(), &fetchedTodos); err != nil {
+		return c.Status(500).SendString("Error decoding todos")
+	}
+
+	return c.JSON(fetchedTodos)
+}
+
+func createTodo(c *fiber.Ctx) error {
+	todo := new(Todo)
+	if err := c.BodyParser(todo); err != nil {
+		return c.Status(400).SendString("Invalid request body")
+	}
+	if todo.Body == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Todo body cannot be empty"})
+	}
+
+	fmt.Println(todo)
+
+	insertResult, err := collection.InsertOne(context.Background(), todo)
+	if err != nil {
+		return c.Status(500).SendString("Error creating todo")
+	}
+
+	todo.ID = insertResult.InsertedID.(primitive.ObjectID)
+
+	return c.Status(201).JSON(todo)
+}
+
+// func updateTodo(c *fiber.Ctx) error {
+// 	return c.SendString("Hello, update todo!")
+// }
+
+// func deleteTodo(c *fiber.Ctx) error {
+// 	return c.SendString("Hello, delete todo!")
+// }
